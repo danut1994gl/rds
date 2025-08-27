@@ -22,13 +22,15 @@ class M3U8Extractor {
       page = await this.pool.getPage();
       this.logger.debug(`Folosesc pagina ${page._poolLabel} pentru ${channel}`);
 
-      // Setăm un listener pentru response-uri m3u8
+      // Setăm un listener pentru response-uri mono.m3u8
       let m3u8Url = null;
       const responseHandler = async (response) => {
         const url = response.url();
-        if (url.includes('video.m3u8') || url.includes('.m3u8')) {
-          m3u8Url = url;
-          this.logger.info(`M3U8 găsit pentru ${channel}: ${url}`);
+        if (url.includes('mono.m3u8')) {
+          if (!m3u8Url) { // Luăm primul link găsit
+            m3u8Url = url;
+            this.logger.info(`MONO.M3U8 găsit pentru ${channel}: ${url}`);
+          }
         }
       };
 
@@ -49,11 +51,12 @@ class M3U8Extractor {
       // Eliminăm elementele de consent
       await this.removeConsentElements(page);
 
-      // Așteptăm un pic să se încarce pagina
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Așteptăm exact 3 secunde să se încarce pagina complet
+      this.logger.debug(`Așteptăm 3 secunde pentru ${channel}...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Încercăm să găsim și să clickăm pe butonul de play
-      await this.clickPlayButton(page);
+      // Clickăm pe div class="play-button-overlay"
+      await this.clickPlayButtonOverlay(page);
 
       // Așteptăm să apară linkul m3u8 (maxim 15 secunde)
       let attempts = 0;
@@ -73,13 +76,13 @@ class M3U8Extractor {
       page.off('response', responseHandler);
 
       if (!m3u8Url) {
-        // Ultimă încercare - căutăm în network requests
+        // Ultimă încercare - căutăm mono.m3u8 în network requests
         const networkRequests = await page.evaluate(() => {
           const requests = [];
           if (window.performance && window.performance.getEntriesByType) {
             const entries = window.performance.getEntriesByType('resource');
             for (const entry of entries) {
-              if (entry.name.includes('.m3u8') || entry.name.includes('video.m3u8')) {
+              if (entry.name.includes('mono.m3u8')) {
                 requests.push(entry.name);
               }
             }
@@ -88,8 +91,8 @@ class M3U8Extractor {
         });
 
         if (networkRequests.length > 0) {
-          m3u8Url = networkRequests[0];
-          this.logger.info(`M3U8 găsit prin performance API pentru ${channel}: ${m3u8Url}`);
+          m3u8Url = networkRequests[0]; // Primul link găsit
+          this.logger.info(`MONO.M3U8 găsit prin performance API pentru ${channel}: ${m3u8Url}`);
         }
       }
 
@@ -179,40 +182,30 @@ class M3U8Extractor {
     }
   }
 
-  async clickPlayButton(page) {
+  async clickPlayButtonOverlay(page) {
     try {
+      this.logger.debug('Căutăm div class="play-button-overlay"...');
+      
+      // Încercăm să clickăm pe div class="play-button-overlay" exact
       const clicked = await page.evaluate(() => {
-        const selectors = [
-          '.play-button-overlay',
-          '.play-button',
-          '.play-btn',
-          '[class*="play-button"]',
-          '[class*="play-overlay"]',
-          '.video-overlay',
-          '.player-overlay',
-          'button[aria-label*="play"]',
-          'button[title*="play"]',
-          '.vjs-big-play-button'
-        ];
-
-        for (const selector of selectors) {
-          const elements = document.querySelectorAll(selector);
-          for (const btn of elements) {
-            if (btn && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
-              const style = window.getComputedStyle(btn);
-              if (style.display !== 'none' && style.visibility !== 'hidden') {
-                btn.click();
-                console.log(`Clicked on: ${selector}`);
-                return true;
-              }
-            }
+        const playOverlay = document.querySelector('div.play-button-overlay');
+        if (playOverlay) {
+          const style = window.getComputedStyle(playOverlay);
+          if (style.display !== 'none' && style.visibility !== 'hidden' && 
+              playOverlay.offsetWidth > 0 && playOverlay.offsetHeight > 0) {
+            playOverlay.click();
+            console.log('Clicked on div.play-button-overlay');
+            return true;
           }
         }
         return false;
       });
 
       if (clicked) {
-        this.logger.debug('Click pe butonul play executat');
+        this.logger.info('✅ Click pe div.play-button-overlay executat cu succes');
+        
+        // Așteptăm un pic după click
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Încercăm să pornimăm toate video-urile găsite
         await page.evaluate(() => {
@@ -224,11 +217,13 @@ class M3U8Extractor {
             } catch (e) {}
           });
         });
+      } else {
+        this.logger.warn('⚠️ Nu s-a găsit div.play-button-overlay sau nu este vizibil');
       }
       
       return clicked;
     } catch (error) {
-      this.logger.debug(`Eroare la click pe play: ${error.message}`);
+      this.logger.error(`❌ Eroare la click pe div.play-button-overlay: ${error.message}`);
       return false;
     }
   }

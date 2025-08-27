@@ -156,8 +156,8 @@ class PuppeteerPool {
     });
     
     page.on("response", async res => {
-      if (res.url().includes('video.m3u8')) {
-        this.logger.info(`[${label}] Found m3u8: ${res.url()}`);
+      if (res.url().includes('mono.m3u8')) {
+        this.logger.info(`[${label}] Found MONO.M3U8: ${res.url()}`);
       }
     });
     
