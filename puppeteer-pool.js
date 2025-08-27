@@ -78,76 +78,34 @@ class PuppeteerPool {
   }
 
   async setupPageInterception(page, label) {
-    await page.setRequestInterception(true);
-    
-    const BLOCK_PATTERNS = [
-      /(^|\/\/|\.)cdn\.jsdelivr\.net\/npm\/disable-devtool/i,
-      /disable-devtool(\.min)?\.js/i,
-      /googletagmanager\.com/i,
-      /google-analytics\.com/i,
-      /googleanalytics\.com/i,
-      /gtag\/js/i,
-      /gtm\.js/i,
-      /ga\.js/i,
-      /googlesyndication\.com/i,
-      /googleadservices\.com/i,
-      /doubleclick\.net/i,
-      /googletagservices\.com/i,
-      /consent\.google\.com/i,
-      /fundingchoicesmessages\.google\.com/i,
-      /consentframework\.com/i,
-      /fonts\.googleapis\.com/i,
-      /fonts\.gstatic\.com/i,
-      /gstatic\.com.*\/feedback/i,
-      /accounts\.google\.com/i,
-      /consent/i,
-      /gdpr/i,
-      /cookie.*banner/i,
-      /privacy.*notice/i
-    ];
-
-    const NAV_BLOCK_PATTERNS = [
-      /about:blank/,
-      /^data:/,
-      /^chrome-error:/,
-      /consent\.google\.com/i,
-      /fundingchoicesmessages\.google\.com/i
-    ];
-
-    page.on("request", req => {
-      const url = req.url();
-      const type = req.resourceType();
+    // Dezactivăm request interception pentru a evita timing issues
+    // Vom bloca prin alte metode mai sigure
+    try {
+      await page.setRequestInterception(false);
       
-      // Verificăm dacă frame-ul principal este disponibil
-      let isTopNav = false;
-      try {
-        isTopNav = req.isNavigationRequest() && req.frame() === page.mainFrame();
-      } catch (e) {
-        // Frame-ul principal nu este încă disponibil
-        isTopNav = req.isNavigationRequest();
-      }
-
-      if (isTopNav && NAV_BLOCK_PATTERNS.some(pattern => pattern.test(url))) {
-        this.logger.debug(`[${label}] Blocked navigation: ${url}`);
-        return req.abort();
-      }
-
-      if (BLOCK_PATTERNS.some(re => re.test(url))) {
-        this.logger.debug(`[${label}] Blocked resource: ${url}`);
-        return req.abort();
-      }
-
-      const lowerUrl = url.toLowerCase();
-      if (lowerUrl.includes('consent') || lowerUrl.includes('gdpr') || 
-          lowerUrl.includes('cookie-banner') || lowerUrl.includes('privacy-notice') ||
-          lowerUrl.includes('cookiebot') || lowerUrl.includes('cookielaw') || 
-          lowerUrl.includes('onetrust')) {
-        this.logger.debug(`[${label}] Blocked consent-related: ${url}`);
-        return req.abort();
-      }
-
-      return req.continue();
-    });
+      // Blocăm prin evaluare în pagină în loc de request interception
+      await page.evaluateOnNewDocument(() => {
+        // Blocăm Google Analytics
+        window.gtag = () => {};
+        window.ga = () => {};
+        window.GoogleAnalyticsObject = null;
+        
+        // Blocăm Google Tag Manager
+        window.dataLayer = window.dataLayer || [];
+        window.google_tag_manager = {};
+        
+        // Blocăm Google Ads
+        window.googletag = { 
+          cmd: [], 
+          display: () => {}, 
+          defineSlot: () => ({ addService: () => {}, setTargeting: () => {} }) 
+        };
+      });
+      
+      this.logger.debug(`[${label}] Page interception setup completed (blocking via page evaluation)`);
+    } catch (error) {
+      this.logger.warn(`[${label}] Failed to setup page interception: ${error.message}`);
+    }
   }
 
   async attachPageLogging(page, label) {

@@ -36,16 +36,17 @@ class M3U8Extractor {
 
       page.on('response', responseHandler);
 
-      // Navigăm la URL cu wait conditions mai robuste
+      // Navigăm la URL mai simplu pentru a evita timing issues
       await page.goto(targetUrl, { 
-        waitUntil: ["domcontentloaded", "networkidle0"],
+        waitUntil: "domcontentloaded",
         timeout: config.puppeteer.timeout 
-      }).catch(async () => {
-        // Dacă networkidle0 fail, încercăm doar cu domcontentloaded
-        await page.goto(targetUrl, { 
-          waitUntil: "domcontentloaded", 
-          timeout: config.puppeteer.timeout 
-        });
+      });
+      
+      // Așteptăm ca pagina să fie complet ready
+      await page.waitForFunction(() => {
+        return document.readyState === 'complete';
+      }, { timeout: 10000 }).catch(() => {
+        this.logger.debug('Page ready state timeout, continuing...');
       });
 
       // Eliminăm elementele de consent
@@ -58,17 +59,18 @@ class M3U8Extractor {
       // Clickăm pe div class="play-button-overlay"
       await this.clickPlayButtonOverlay(page);
 
-      // Așteptăm să apară linkul m3u8 (maxim 15 secunde)
+      // Așteptăm să apară linkul mono.m3u8 (maxim 20 secunde)
       let attempts = 0;
-      const maxAttempts = 30; // 30 * 500ms = 15 secunde
+      const maxAttempts = 40; // 40 * 500ms = 20 secunde
       
       while (!m3u8Url && attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 500));
         attempts++;
         
-        // Încercăm din nou click pe play la fiecare 5 secunde
-        if (attempts % 10 === 0) {
-          await this.clickPlayButton(page);
+        // Încercăm din nou click pe play la fiecare 10 secunde
+        if (attempts % 20 === 0) {
+          this.logger.debug(`Încercare ${attempts/20} - click din nou pe play button...`);
+          await this.clickPlayButtonOverlay(page);
         }
       }
 
