@@ -67,7 +67,7 @@ echo "Chrome: $(google-chrome --version)"
 
 echo "3. Copiez fișierele serviciului..."
 # Presupunem că suntem în directorul cu fișierele
-SERVICE_DIR="/root/rds_new.js"
+SERVICE_DIR="/root/rds"
 mkdir -p $SERVICE_DIR
 
 # Copiem toate fișierele
