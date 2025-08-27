@@ -36,28 +36,98 @@ class M3U8Extractor {
 
       page.on('response', responseHandler);
 
-      // Navigăm la URL mai simplu pentru a evita timing issues
-      await page.goto(targetUrl, { 
-        waitUntil: "domcontentloaded",
-        timeout: config.puppeteer.timeout 
+      // Copiez exact logica din rds.js care funcționează
+      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 120000 });
+
+      // Eliminăm elementele de consent după încărcarea paginii (după 2 secunde)
+      setTimeout(async () => {
+        await this.removeConsentElements(page);
+      }, 2000);
+
+      // Click automat pe butonul de play după 3 secunde - exact ca în rds.js
+      const clickResult = await new Promise((resolve) => {
+        setTimeout(async () => {
+          try {
+            this.logger.debug("Căutând butonul de play...");
+            
+            // Verificăm dacă elementul există și e vizibil
+            const playButton = await page.$('.play-button-overlay');
+            if (playButton) {
+              // Verificăm dacă elementul e vizibil
+              const isVisible = await page.evaluate(el => {
+                const style = window.getComputedStyle(el);
+                return style.display !== 'none' && 
+                       style.visibility !== 'hidden' && 
+                       el.offsetWidth > 0 && 
+                       el.offsetHeight > 0;
+              }, playButton);
+
+              if (isVisible) {
+                this.logger.info("Click pe butonul de play...");
+                await playButton.click();
+                this.logger.info("✓ Click pe play button executat!");
+                resolve(true);
+              } else {
+                this.logger.warn("Butonul de play nu este vizibil");
+                resolve(false);
+              }
+            } else {
+              // Încercăm să găsim butonul prin alte metode
+              const clicked = await page.evaluate(() => {
+                // Căutăm elementul direct în DOM
+                const playBtn = document.querySelector('.play-button-overlay');
+                if (playBtn) {
+                  playBtn.click();
+                  return true;
+                }
+
+                // Căutăm și alte selectori posibile pentru butonul de play
+                const playSelectors = [
+                  '.play-button',
+                  '.play-btn',
+                  '[class*="play-button"]',
+                  '[class*="play-overlay"]',
+                  '.video-overlay',
+                  '.player-overlay',
+                  'button[aria-label*="play"]',
+                  'button[title*="play"]'
+                ];
+
+                for (const selector of playSelectors) {
+                  const btn = document.querySelector(selector);
+                  if (btn) {
+                    btn.click();
+                    console.log(`Clicked on: ${selector}`);
+                    return true;
+                  }
+                }
+                return false;
+              });
+
+              if (clicked) {
+                this.logger.info("✓ Click pe play button executat (metoda alternativă)!");
+                resolve(true);
+              } else {
+                this.logger.warn("⚠ Butonul de play nu a fost găsit");
+                resolve(false);
+              }
+            }
+          } catch (error) {
+            this.logger.error("Eroare la click pe play button:", error.message);
+            resolve(false);
+          }
+        }, 3000);
       });
-      
-      // Așteptăm ca pagina să fie complet ready
-      await page.waitForFunction(() => {
-        return document.readyState === 'complete';
-      }, { timeout: 10000 }).catch(() => {
-        this.logger.debug('Page ready state timeout, continuing...');
-      });
 
-      // Eliminăm elementele de consent
-      await this.removeConsentElements(page);
-
-      // Așteptăm exact 3 secunde să se încarce pagina complet
-      this.logger.debug(`Așteptăm 3 secunde pentru ${channel}...`);
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Clickăm pe div class="play-button-overlay"
-      await this.clickPlayButtonOverlay(page);
+      // Adaug logica pentru pornirea video-urilor ca în rds.js
+      try {
+        await page.evaluate(async () => {
+          const vids = Array.from(document.querySelectorAll("video"));
+          for (const v of vids) {
+            try { v.muted = true; await v.play().catch(()=>{}); } catch {}
+          }
+        });
+      } catch {}
 
       // Așteptăm să apară linkul mono.m3u8 (maxim 20 secunde)
       let attempts = 0;
