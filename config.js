@@ -5,8 +5,8 @@ const config = {
   },
   puppeteer: {
     poolSize: 10,
-    headless: process.env.HEADLESS === "1" ? "new" : false,
-    chromePath: process.env.CHROME_PATH || undefined,
+    headless: process.env.HEADLESS !== "0" ? "new" : false,
+    chromePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
     timeout: 30000,
     maxRetries: 3
   },

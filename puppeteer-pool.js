@@ -26,12 +26,21 @@ class PuppeteerPool {
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-zygote",
+        "--single-process",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
         "--autoplay-policy=no-user-gesture-required",
         "--disable-blink-features=AutomationControlled",
         "--disable-web-security",
-        "--disable-features=VizDisplayCompositor",
-        "--disable-gpu",
-        "--disable-dev-shm-usage"
+        "--disable-features=VizDisplayCompositor,TranslateUI",
+        "--disable-ipc-flooding-protection",
+        "--disable-extensions",
+        "--disable-default-apps"
       ],
       defaultViewport: { width: 1366, height: 850 },
     });
