@@ -71,6 +71,9 @@ class PuppeteerPool {
       this.logger.warn(`Failed to set timezone for ${label}: ${e.message}`);
     }
 
+    // Așteptăm un pic ca pagina să se inițializeze complet
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     await this.setupPageInterception(page, label);
     await this.attachPageLogging(page, label);
     
@@ -78,6 +81,15 @@ class PuppeteerPool {
   }
 
   async setupPageInterception(page, label) {
+    // Verificăm că pagina e ready înainte de setup
+    try {
+      await page.evaluate(() => {
+        return document.readyState;
+      });
+    } catch (e) {
+      this.logger.debug(`[${label}] Page not ready for interception setup, continuing anyway...`);
+    }
+
     // Copiez exact logica din rds.js care funcționează
     const BLOCK_PATTERNS = [
       /(^|\/\/|\.)cdn\.jsdelivr\.net\/npm\/disable-devtool/i,
@@ -113,11 +125,36 @@ class PuppeteerPool {
       /fundingchoicesmessages\.google\.com/i
     ];
 
-    await page.setRequestInterception(true);
+    try {
+      await page.setRequestInterception(true);
+      this.logger.debug(`[${label}] Request interception enabled successfully`);
+    } catch (e) {
+      this.logger.warn(`[${label}] Failed to enable request interception: ${e.message}`);
+      // Dacă nu putem activa interception, continuăm fără el
+      return;
+    }
+
     page.on("request", req => {
       const url = req.url();
       const type = req.resourceType();
-      const isTopNav = req.isNavigationRequest() && req.frame() === page.mainFrame();
+      
+      // Safe main frame access - evităm eroarea "Requesting main frame too early"
+      let isTopNav = false;
+      try {
+        if (req.isNavigationRequest()) {
+          // Încercăm să accesăm main frame doar dacă e sigur
+          const frame = req.frame();
+          if (frame) {
+            isTopNav = frame === page.mainFrame();
+          } else {
+            // Dacă nu avem frame, presupunem că e navigation request
+            isTopNav = true;
+          }
+        }
+      } catch (e) {
+        // Dacă main frame nu e ready, tratăm ca navigation request simplu
+        isTopNav = req.isNavigationRequest();
+      }
 
       // 1) blocam nav top-level toxice
       if (isTopNav && NAV_BLOCK_PATTERNS.some(pattern => pattern.test(url))) {
