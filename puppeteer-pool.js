@@ -117,7 +117,15 @@ class PuppeteerPool {
     page.on("request", req => {
       const url = req.url();
       const type = req.resourceType();
-      const isTopNav = req.isNavigationRequest() && req.frame() === page.mainFrame();
+      
+      // Verificăm dacă frame-ul principal este disponibil
+      let isTopNav = false;
+      try {
+        isTopNav = req.isNavigationRequest() && req.frame() === page.mainFrame();
+      } catch (e) {
+        // Frame-ul principal nu este încă disponibil
+        isTopNav = req.isNavigationRequest();
+      }
 
       if (isTopNav && NAV_BLOCK_PATTERNS.some(pattern => pattern.test(url))) {
         this.logger.debug(`[${label}] Blocked navigation: ${url}`);
@@ -189,7 +197,15 @@ class PuppeteerPool {
       
       // Curățăm pagina pentru refolosire
       try {
-        await page.goto('about:blank');
+        // Așteptăm să se termine orice operațiune în curs
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Reset la about:blank
+        await page.goto('about:blank', { 
+          waitUntil: 'domcontentloaded',
+          timeout: 5000 
+        });
+        
         await this.removeConsentElements(page);
       } catch (e) {
         this.logger.warn(`Failed to clean page ${page._poolLabel}: ${e.message}`);

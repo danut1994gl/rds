@@ -34,10 +34,16 @@ class M3U8Extractor {
 
       page.on('response', responseHandler);
 
-      // Navigăm la URL
+      // Navigăm la URL cu wait conditions mai robuste
       await page.goto(targetUrl, { 
-        waitUntil: "domcontentloaded", 
+        waitUntil: ["domcontentloaded", "networkidle0"],
         timeout: config.puppeteer.timeout 
+      }).catch(async () => {
+        // Dacă networkidle0 fail, încercăm doar cu domcontentloaded
+        await page.goto(targetUrl, { 
+          waitUntil: "domcontentloaded", 
+          timeout: config.puppeteer.timeout 
+        });
       });
 
       // Eliminăm elementele de consent
