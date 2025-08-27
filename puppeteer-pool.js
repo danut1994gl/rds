@@ -78,80 +78,75 @@ class PuppeteerPool {
   }
 
   async setupPageInterception(page, label) {
-    // ELIMINĂ COMPLET request interception pentru a evita main frame issues
-    // În schimb, blocăm prin evaluateOnNewDocument
-    
-    try {
-      await page.evaluateOnNewDocument(() => {
-        // Blocăm Google Analytics
-        window.gtag = () => {};
-        window.ga = () => {};
-        window.GoogleAnalyticsObject = null;
-        window._gaq = [];
-        
-        // Blocăm Google Tag Manager
-        window.dataLayer = window.dataLayer || [];
-        window.google_tag_manager = {};
-        
-        // Blocăm Google Ads
-        window.googletag = { 
-          cmd: [], 
-          display: () => {}, 
-          defineSlot: () => ({ 
-            addService: () => {}, 
-            setTargeting: () => {},
-            getSlotElementId: () => ''
-          }) 
-        };
-        
-        // Blocăm încărcarea scripturilor problematice
-        const originalAppendChild = Node.prototype.appendChild;
-        Node.prototype.appendChild = function(child) {
-          if (child.tagName === 'SCRIPT' && child.src) {
-            const src = child.src.toLowerCase();
-            if (src.includes('googletagmanager') || 
-                src.includes('google-analytics') ||
-                src.includes('googlesyndication') ||
-                src.includes('doubleclick') ||
-                src.includes('consent') ||
-                src.includes('cookiebot')) {
-              console.log('Blocked script:', child.src);
-              return child;
-            }
-          }
-          return originalAppendChild.call(this, child);
-        };
-        
-        // Blocăm creation de elemente script problematice
-        const originalCreateElement = document.createElement;
-        document.createElement = function(tagName) {
-          const element = originalCreateElement.call(this, tagName);
-          if (tagName.toLowerCase() === 'script') {
-            const originalSetAttribute = element.setAttribute;
-            element.setAttribute = function(name, value) {
-              if (name === 'src' && typeof value === 'string') {
-                const src = value.toLowerCase();
-                if (src.includes('googletagmanager') ||
-                    src.includes('google-analytics') ||
-                    src.includes('googlesyndication') ||
-                    src.includes('doubleclick') ||
-                    src.includes('consent') ||
-                    src.includes('cookiebot')) {
-                  console.log('Blocked script creation:', value);
-                  return;
-                }
-              }
-              return originalSetAttribute.call(this, name, value);
-            };
-          }
-          return element;
-        };
-      });
-      
-      this.logger.debug(`[${label}] Page blocking setup completed (no request interception)`);
-    } catch (error) {
-      this.logger.warn(`[${label}] Failed to setup page blocking: ${error.message}`);
-    }
+    // REVIN la logica din rds.js cu PUPPETEER 19.x (versiune mai stabilă)
+    const BLOCK_PATTERNS = [
+      /(^|\/\/|\.)cdn\.jsdelivr\.net\/npm\/disable-devtool/i,
+      /disable-devtool(\.min)?\.js/i,
+      /googletagmanager\.com/i,
+      /google-analytics\.com/i,
+      /googleanalytics\.com/i,
+      /gtag\/js/i,
+      /gtm\.js/i,
+      /ga\.js/i,
+      /googlesyndication\.com/i,
+      /googleadservices\.com/i,
+      /doubleclick\.net/i,
+      /googletagservices\.com/i,
+      /consent\.google\.com/i,
+      /fundingchoicesmessages\.google\.com/i,
+      /consentframework\.com/i,
+      /fonts\.googleapis\.com/i,
+      /fonts\.gstatic\.com/i,
+      /gstatic\.com.*\/feedback/i,
+      /accounts\.google\.com/i,
+      /consent/i,
+      /gdpr/i,
+      /cookie.*banner/i,
+      /privacy.*notice/i
+    ];
+
+    const NAV_BLOCK_PATTERNS = [
+      /about:blank/,
+      /^data:/,
+      /^chrome-error:/,
+      /consent\.google\.com/i,
+      /fundingchoicesmessages\.google\.com/i
+    ];
+
+    await page.setRequestInterception(true);
+    page.on("request", req => {
+      const url = req.url();
+      const type = req.resourceType();
+      const isTopNav = req.isNavigationRequest() && req.frame() === page.mainFrame();
+
+      // 1) blocam nav top-level toxice
+      if (isTopNav && NAV_BLOCK_PATTERNS.some(pattern => pattern.test(url))) {
+        this.logger.debug(`[${label}][BLOCK] top-level nav -> ${url}`);
+        return req.abort();
+      }
+
+      // 2) blocam toate resursele din pattern-uri
+      if (BLOCK_PATTERNS.some(re => re.test(url))) {
+        this.logger.debug(`[${label}][BLOCK] resource -> ${url}`);
+        return req.abort();
+      }
+
+      // 3) blocam requesturile care conțin cuvinte cheie legate de consent
+      const lowerUrl = url.toLowerCase();
+      if (lowerUrl.includes('consent') || 
+          lowerUrl.includes('gdpr') || 
+          lowerUrl.includes('cookie-banner') ||
+          lowerUrl.includes('privacy-notice') ||
+          lowerUrl.includes('cookiebot') ||
+          lowerUrl.includes('cookielaw') ||
+          lowerUrl.includes('onetrust')) {
+        this.logger.debug(`[${label}][BLOCK] consent-related -> ${url}`);
+        return req.abort();
+      }
+
+      // altfel continuam
+      return req.continue();
+    });
   }
 
   async attachPageLogging(page, label) {
