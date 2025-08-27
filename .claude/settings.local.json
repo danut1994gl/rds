@@ -1,0 +1,14 @@
+{
+  "enabledMcpjsonServers": [
+    "playwright",
+    "supabase",
+    "sequential-thinking",
+    "context7",
+    "figma-dev-mode-mcp-server"
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)"
+    ]
+  }
+}
